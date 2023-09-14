@@ -1,0 +1,16 @@
+{
+    "scripts": {
+        "dfx_install": "DFX_VERSION=0.14.2 sh -ci \"$(curl -fsSL https://sdk.dfinity.org/install.sh)\"",
+        "replica_start": "dfx start --background",
+        "replica_stop": "dfx stop",
+        "canister_deploy_local": "dfx deploy icp_gamefi",
+        "canister_deploy_mainnet": "dfx deploy --network ic icp_gamefi",
+        "canister_uninstall": "dfx canister uninstall-code icp_gamefi",
+        "canister_call_get_message": "dfx canister call icp_gamefi getMessage",
+        "canister_call_set_message": "dfx canister call icp_gamefi setMessage '(\"Hello world!\")'"
+    },
+    "dependencies": {
+        "azle": "0.17.1"
+    }
+}
+

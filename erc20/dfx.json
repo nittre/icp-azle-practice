@@ -1,0 +1,12 @@
+{
+  "canisters": {
+    "icp_gamefi": {
+      "type": "custom",
+      "build": "npx azle icp_gamefi",
+      "root": "src",
+      "ts": "src/erc20.ts",
+      "candid": "src/erc20.did",
+      "wasm": ".azle/icp_gamefi/icp_gamefi.wasm.gz"
+    }
+  }
+}
