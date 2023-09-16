@@ -1,26 +1,27 @@
-import { nat64, $query, $update, ic } from "azle";
+import {
+  nat64,
+  Record,
+  $query,
+  $update,
+  ic,
+  match,
+  StableBTreeMap,
+  Vec,
+  Tuple,
+} from "azle";
 
-type Account = {
+type Account = Record<{
   address: string;
   balance: nat64;
-  allowances: {
-    [spender: string]: nat64;
-  };
-};
+  allowances: Vec<Tuple<[string, nat64]>>;
+}>;
 
-type State = {
-  accounts: {
-    [key: string]: Account;
-  };
-  name: string;
-  ticker: string;
-  totalSupply: nat64;
-};
+// 전역 변수 state를 StableBTreeMap으로 변경합니다.
+const state = new StableBTreeMap<string, Account>(0, 100, 1000);
 
-let state: State = {
-  accounts: {},
+const tokenInfo = {
   name: "",
-  ticker: "", // = 심볼
+  ticker: "",
   totalSupply: 0n,
 };
 
@@ -32,93 +33,161 @@ function getCaller(): string {
   return caller;
 }
 
+function getAllowance(owner: string, spender: string): nat64 {
+  const ownerAccount = match(state.get(owner), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("user not found");
+    },
+  });
+
+  for (let allowance of ownerAccount.allowances) {
+    if (allowance[0] == spender) {
+      return allowance[1];
+    }
+  }
+  return 0n;
+}
+
 $update;
 export function initialize(
   name: string,
   ticker: string,
   totalSupply: nat64
 ): string {
-  state = {
-    ...state,
-    name,
-    ticker,
-    totalSupply,
-  };
-
   const creatorAddress = getCaller();
-  state.accounts[creatorAddress] = {
+
+  // 새로운 계정 생성 및 초기화
+  const creatorAccount: Account = {
     address: creatorAddress,
     balance: totalSupply,
-    allowances: {},
+    allowances: [],
   };
+
+  // StableBTreeMap에 새 계정 추가
+
+  tokenInfo.name = name;
+  tokenInfo.ticker = ticker;
+  tokenInfo.totalSupply = totalSupply;
+  state.insert(creatorAddress, creatorAccount);
 
   return creatorAddress;
 }
 
 $update;
-export function transfer(
-  fromAddress: string,
-  toAddress: string,
-  amount: nat64
-): boolean {
-  if (state.accounts[toAddress] === undefined) {
-    state.accounts[toAddress] = {
-      address: toAddress,
-      balance: 0n,
-      allowances: {},
-    };
+export function transfer(toAddress: string, amount: nat64): boolean {
+  const fromAddress = getCaller();
+
+  const fromAccount = match(state.get(fromAddress), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("fromAccount not found");
+    },
+  });
+
+  // 수신 계정이 없으면 새로 생성
+  const toAccount = match(state.get(toAddress), {
+    Some: (some) => some,
+    None: () => {
+      const newAccount = {
+        address: toAddress,
+        balance: 0n,
+        allowances: [],
+      };
+      state.insert(toAddress, newAccount);
+      return newAccount;
+    },
+  });
+
+  if (!fromAccount || fromAccount.balance < amount) {
+    return false;
   }
-  state.accounts[fromAddress].balance -= amount;
-  state.accounts[toAddress].balance += amount;
+
+  fromAccount.balance -= amount;
+  toAccount.balance += amount;
+
+  // 업데이트된 계정 정보를 StableBTreeMap에 다시 삽입
+  state.insert(fromAddress, fromAccount);
+  state.insert(toAddress, toAccount);
 
   return true;
 }
 
 $query;
 export function balanceOf(address: string): nat64 {
-  /*
-        state.accounts[address]? => 해당 값이 null이면, null 대신 Undefined를 반환한다.
-        그리고, ?? 연산자는 왼쪽 값이 null 또는 undefined 값이면 오른쪽 값을 반환한다.
-    */
-  return state.accounts[address]?.balance ?? 0n;
+  const account = state.get(address);
+  return match(account, {
+    Some: (some) => some.balance,
+    None: () => 0n,
+  });
 }
 
 $query;
 export function ticker(): string {
-  return state.ticker;
+  return tokenInfo.ticker;
 }
 
 $query;
 export function name(): string {
-  return state.name;
+  return tokenInfo.name;
 }
 
 $query;
 export function totalSupply(): nat64 {
-  return state.totalSupply;
+  return tokenInfo.totalSupply;
 }
 
 $update;
 export function approve(spender: string, amount: nat64): boolean {
-  const owner = getCaller();
-  const ownerAccount = state.accounts[owner];
-  if (!ownerAccount) {
+  const ownerAddress = getCaller();
+
+  const ownerAccount = match(state.get(ownerAddress), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("fromAccount not found");
+    },
+  });
+
+  // 수신 계정이 없으면 새로 생성
+  const spenderAccount = match(state.get(spender), {
+    Some: (some) => some,
+    None: () => {
+      const newAccount = {
+        address: spender,
+        balance: 0n,
+        allowances: [],
+      };
+      state.insert(spender, newAccount);
+      return newAccount;
+    },
+  });
+
+  if (!ownerAccount || ownerAccount.balance < amount) {
     return false;
   }
 
-  ownerAccount.allowances[spender] = amount;
+  let exist = false;
+  for (let i = 0; i < ownerAccount.allowances.length; i++) {
+    const [key, value] = ownerAccount.allowances[i];
+    if (key === spender) {
+      exist = true;
+      ownerAccount.allowances[i] = [spender, amount];
+    }
+  }
+  if (!exist) {
+    ownerAccount.allowances.push([spender, amount]);
+  }
+  state.insert(ownerAddress, ownerAccount);
+
   return true;
 }
 
 $query;
 export function allowance(owner: string, spender: string): nat64 {
-  const ownerAccount = state.accounts[owner];
-  if (!ownerAccount) {
-    return 0n;
-  }
-
-  const allowance = ownerAccount.allowances[spender];
-  return allowance ? allowance : 0n;
+  return match(state.get(owner), {
+    Some: (some) => getAllowance(owner, spender),
+    None: () => 0n,
+  });
 }
 
 $update;
@@ -128,28 +197,57 @@ export function transferFrom(
   amount: nat64
 ): boolean {
   const spender = getCaller();
-  const fromAccount = state.accounts[fromAddress];
-  if (!fromAccount || fromAccount.balance < amount) {
-    return false; // insufficien balance or sender doesn't exist
-  }
+  const spenderAccount = match(state.get(spender), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("spender account not found");
+    },
+  });
 
-  const allowance = fromAccount.allowances[spender];
+  const fromAccount = match(state.get(fromAddress), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("from account not found");
+    },
+  });
+
+  const allowance = getAllowance(fromAddress, spender);
   if (allowance === undefined || allowance < amount) {
     return false; // insufficient allowance
   }
 
-  if (state.accounts[toAddress] === undefined) {
-    state.accounts[toAddress] = {
-      address: toAddress,
-      balance: 0n,
-      allowances: {},
-    };
-  }
+  // 수신 계정이 없으면 새로 생성
+  const toAccount = match(state.get(toAddress), {
+    Some: (some) => some,
+    None: () => {
+      const newAccount = {
+        address: toAddress,
+        balance: 0n,
+        allowances: [],
+      };
+      state.insert(toAddress, newAccount);
+      return newAccount;
+    },
+  });
 
   // perform the transfer
   fromAccount.balance -= amount;
-  state.accounts[toAddress].balance += amount;
-  fromAccount.allowances[spender] -= amount;
+  toAccount.balance += amount;
+  state.insert(fromAddress, fromAccount);
+  state.insert(toAddress, toAccount);
+
+  // fromAccount - spender 간의 allowance 갱신
+  for (let i = 0; i < fromAccount.allowances.length; i++) {
+    const item = fromAccount.allowances[i];
+    if (fromAccount.allowances[i][0] === spender) {
+      fromAccount.allowances[i] = [
+        spender,
+        fromAccount.allowances[i][1] - amount,
+      ];
+    }
+  }
+
+  state.insert(fromAddress, fromAccount);
 
   return true;
 }

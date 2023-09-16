@@ -6,6 +6,6 @@ service : () -> {
   name : () -> (text) query;
   ticker : () -> (text) query;
   totalSupply : () -> (nat64) query;
-  transfer : (text, text, nat64) -> (bool);
+  transfer : (text, nat64) -> (bool);
   transferFrom : (text, text, nat64) -> (bool);
 }
