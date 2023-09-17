@@ -2,7 +2,9 @@ service : () -> {
   allowance : (text, text) -> (nat64) query;
   approve : (text, nat64) -> (bool);
   balanceOf : (text) -> (nat64) query;
+  burn : (nat64) -> (bool);
   initialize : (text, text, nat64) -> (text);
+  mint : (text, nat64) -> (bool);
   name : () -> (text) query;
   ticker : () -> (text) query;
   totalSupply : () -> (nat64) query;

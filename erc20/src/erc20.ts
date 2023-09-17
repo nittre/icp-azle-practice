@@ -23,6 +23,7 @@ const tokenInfo = {
   name: "",
   ticker: "",
   totalSupply: 0n,
+  creatorAddress: "",
 };
 
 function getCaller(): string {
@@ -69,6 +70,7 @@ export function initialize(
   tokenInfo.name = name;
   tokenInfo.ticker = ticker;
   tokenInfo.totalSupply = totalSupply;
+  tokenInfo.creatorAddress = creatorAddress;
   state.insert(creatorAddress, creatorAccount);
 
   return creatorAddress;
@@ -249,5 +251,59 @@ export function transferFrom(
 
   state.insert(fromAddress, fromAccount);
 
+  return true;
+}
+
+$update;
+export function mint(to: string, amount: nat64): boolean {
+  const caller = getCaller();
+
+  const callerAccount = match(state.get(caller), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("Caller account not found");
+    },
+  });
+
+  if (tokenInfo.creatorAddress !== callerAccount.address) {
+    throw new Error("Only the creator can mint new tokens");
+  }
+  const toAccount = match(state.get(to), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("Recipient account not found");
+    },
+  });
+
+  toAccount.balance += amount;
+  tokenInfo.totalSupply += amount;
+
+  state.insert(to, toAccount);
+  return true;
+}
+
+$update;
+export function burn(amount: nat64): boolean {
+  const caller = getCaller();
+
+  const callerAccount = match(state.get(caller), {
+    Some: (some) => some,
+    None: () => {
+      throw new Error("Caller account not found");
+    },
+  });
+
+  if (tokenInfo.creatorAddress !== callerAccount.address) {
+    throw new Error("Only the creator can burn tokens");
+  }
+
+  if (tokenInfo.totalSupply < amount) {
+    throw new Error("Insufficient tokens to burn");
+  }
+
+  callerAccount.balance -= amount;
+  tokenInfo.totalSupply -= amount;
+
+  state.insert(caller, callerAccount);
   return true;
 }
